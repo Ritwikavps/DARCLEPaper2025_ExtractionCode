@@ -1,5 +1,8 @@
 clear; clc
 
+%Ritwika VPS
+%This script performs more checks on (atuomatically and manually, as necessary) extracted + reviewed files.
+
 %reading in extraction sheets and getting obs/expyt only + combining
 PreHoc = readtable('DARCLE_extraction_2.16.26.xlsx','Sheet','Corrected_ReTyped_PostManualExt');
 PostHoc = readtable('Post-hoc Paper Extractions_3.23.26.xlsx','Sheet','Corrected_ReTyped_PostManualExt');

@@ -1,0 +1,5 @@
+Total number of studies included: 378 
+Total number of studies excluded (note that these exclusions are only studies that are identified as non-LF and/or non-English *after/during* manual review/extraction): 5 
+Total number of studies excluded as non-LF during manual extraction/review: 2 
+Total number of studies excluded as non-English during manual extraction/review: 3 
+Earliest year represented is 1979 and latest year represented is 2026 
