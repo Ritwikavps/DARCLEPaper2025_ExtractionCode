@@ -1,0 +1,7 @@
+- Total number of studies included (after accounting for exclusions; see next line): 242 
+- The total number of studies excluded during/after the manual extraction and review stagedue to identifying dupes (including id-ing dupes through custom code) + study type being changed after review (re-typing) is: 13 
+- Communities/consortia were automatically extracted from ALL pdfs initially tagged as experimental or observational. Accounting for exculded studies (see prev. line), number of studies communities/consortia were extracted from: 242 
+- Number of studies that could not be automatically extracted for all categories except communities/consortia(after accounting for studies that needed to be excluded due to re-typing and id-ing dupes): 20 
+- The number of papers (including papers that could not be automatically extracted at all except for communities/consortia, and after accounting for exclusions) that were manually extracted/reviewd are:
+ 33 (RecDevice); 58 (Software); 136 (Countries and langs); 20 (ManualAnnot); 20 (Topics) 
+- Number of studies that use LENA as recording device or as software (or both): 225 

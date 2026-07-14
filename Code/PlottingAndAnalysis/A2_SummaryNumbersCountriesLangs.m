@@ -87,15 +87,15 @@ end
 % not be manually extracted - minus papers that were tagged as needing to be excluded during manual review/extraction (resulting in the final combined
 % extraction sheet).
 
-%Topics are only extracted automatically, so the number of entries in the combined topics spreadhseet minus the number of papers tagged to be excluded
+% Communities/consortia are only extracted automatically, so the number of entries in the combined spreadhseet minus the number of papers tagged to be excluded
 % in the combined Papers_To_Exclude sheet from the manual extraction spreadsheets should be equal to the finalied number of observational and expt studies.
 % This is because the final count is determined after id-ing duplicates and re-typed papers, and that info is present in the 'Papers_To_Exclude' combined
 % sheet.
 if (height(AutoExtractedTabs_FullTab{end}) - height(NotAutoExtractedTabs_FullTab{1})) ~= height(DataTab_ObsExpOnly)
-    error('Topics numbers do not match (Checks Pt1')
+    error('Communities/consortia numbers do not match (Checks Pt1')
 end
 
-%All other categories except topics
+%All other categories except communities/consortia
 ManualInds = 3:7; AutoInds = 1:5; %indices for recdevice, software, countries and langs, manual annotations, and topics
 for i = 1:numel(AutoInds)  %check for each category
     if ((height(AutoExtractedTabs_FullTab{AutoInds(i)}) + height(NotAutoExtractedTabs_FullTab{2}) - height(NotAutoExtractedTabs_FullTab{1})) ...
@@ -110,45 +110,88 @@ end
 
 
 %---1d. Checks Pt 2 (more fine-grained checks) ---
-% For each category (except topics, because topics are entirely extracted automatically), check that the final number of expt + obs papers is
+% For each category (except communities/consortia, because these are entirely extracted automatically), check that the final number of expt + obs papers is
 % equal to the number of automatically extracted papers + number of manually extracted/reviewed studies - number of studies tagged for
 % exclusion - number of studies in manually extracted/reviewed studies that replaces the corresponding automatically extracted entry (due to being
 % manually reviewed and therefore, being present in the category-level manual review/extraction).
 % Aside from studies that could not be automatically extracted at all, for some categories, some studies required manual review/extraction, even if
 % they were present in the automatic extraction sheet. For these studies, the manual review/extraction entry is intended to replace the automatic 
 % extraction one if it exists.
+for i = 1:numel(AutoInds)
 
+    %Get processed tables for each category (except communities/consortia) after removing papers to be excluded and papers that
+    % are in the auto table and then were manually reviewed and therefore are repeated in the manual table. Also get the
+    % number of studies that were manually reviewed for each category.
+    [FinalOpTabByCateg{i},NumManualReviewByCateg(i)] = GetFinalProcessedTab_ManualDupesAndExclusionsRemoved(AutoExtractedTabs_FullTab{AutoInds(i)}, ...
+                                                                    NotAutoExtractedTabs_FullTab{ManualInds(i)},NotAutoExtractedTabs_FullTab{1});
+    
+    %Additional check: in this combined table, there shouldn't be a 'ManualReview' entry (because the manual review entries have been manually reviewed).
+    CurrVarNames = FinalOpTabByCateg{i}.Properties.VariableNames; %get variable names
+    for j = 1:numel(CurrVarNames)
+        if any(contains(FinalOpTabByCateg{i}.(CurrVarNames{j}),'ManualReview','IgnoreCase',true)) %check if there are any matches
+            error('There should not be a ManualReview entry in this combined table')
+        end
+    end
+end
 
-
-%SAVE fully processed combined tables with exclusions excluded (incl for
-%topics)
-
-
-
+%Number of studies that could not be automatically extracted for any category (except communities/consortia) after accounting for exclusions from
+% re-typing and duplicates in the systematic search.
+NoAutoExtrac_CombinedTab = NotAutoExtractedTabs_FullTab{2}; %combined tab listing all papers that could not be auto extracted
+Exclusions_CombinedTab = NotAutoExtractedTabs_FullTab{1}; %comined table listing exclusions (re-type + dupes id-d)
+%Remove excluded studies from the list that could not be automatically extracted
+NoAutoExtrac_FinalTab_ExclusionsRem = NoAutoExtrac_CombinedTab(~contains(NoAutoExtrac_CombinedTab.FileName,Exclusions_CombinedTab.FileName),:);
 
 
 %% Write outputs to file
 cd(OpPath) 
 
 %Write summary numbers to text file
-fileID = fopen('S5_SummaryNumbersFromExtractedData.txt', 'w');  %open file
+fileID = fopen('SF5_SummaryNumbersFromExtractedData.txt', 'w');  %open file
 
 %Write to file:
 %total number of included studies (after accounting for exclusions)
-fprintf(fileID,'Total number of studies included (after accounting for exclusions; see next line): %i \n',height(DataTab_ObsExpOnly)); 
+fprintf(fileID,'- Total number of studies included (after accounting for exclusions; see next line): %i \n',height(DataTab_ObsExpOnly)); 
 %Total number of studies excluded during/after manual extraction and review due to re-typing and id-ing dupes (including id-ing dupes through custom code).
-fprintf(fileID,['The total number of studies excluded during/after the manual extraction and review stage' ... 
+fprintf(fileID,['- The total number of studies excluded during/after the manual extraction and review stage' ... 
     'due to identifying dupes (including id-ing dupes through custom code) + study type ' ...
     'being changed after review (re-typing) is: %i \n'],height(NotAutoExtractedTabs_FullTab{1})); 
-fprintf(fileID,['Topics were automatically extracted from ALL pdfs initially tagged as experimental or observational. ' ...
-    'Accounting for exculded studies (see prev. line), number of studies topics were extracted from: %i \n'], ...
+fprintf(fileID,['- Communities/consortia were automatically extracted from ALL pdfs initially tagged as experimental or observational. ' ...
+    'Accounting for exculded studies (see prev. line), number of studies communities/consortia were extracted from: %i \n'], ...
     height(AutoExtractedTabs_FullTab{end}) - height(NotAutoExtractedTabs_FullTab{1})); %Number of studies topics were extracted from (accounting for exclusions)
+%number of studies that could not be automatically extracted
+fprintf(fileID,['- Number of studies that could not be automatically extracted for all categories except communities/consortia' ... 
+    '(after accounting for studies that needed to be excluded due to re-typing and id-ing dupes): %i \n'],height(NoAutoExtrac_FinalTab_ExclusionsRem));
+fprintf(fileID,['- The number of papers (including papers that could not be automatically extracted at all except for communities/consortia, ' ...
+    'and after accounting for exclusions) that were manually extracted/reviewd are:\n %i (RecDevice); %i (Software); ' ...
+    '%i (Countries and langs); %i (ManualAnnot); %i (Topics) \n'], ...
+    NumManualReviewByCateg(1), NumManualReviewByCateg(2), NumManualReviewByCateg(3), NumManualReviewByCateg(4), NumManualReviewByCateg(5));
 
+LENA_AsRecDeviceFiles = FinalOpTabByCateg{1}.FileName(contains(FinalOpTabByCateg{1}.LENA,'yes','IgnoreCase',true));
+LENA_AsSoftwareFiles = FinalOpTabByCateg{2}.FileName(contains(FinalOpTabByCateg{2}.LENA,'yes','IgnoreCase',true));
+LENA_AsRecDevOrSoftWareFiles = union(LENA_AsRecDeviceFiles,LENA_AsSoftwareFiles);
+fprintf(fileID,'- Number of studies that use LENA as recording device or as software (or both): %i \n', height(LENA_AsRecDevOrSoftWareFiles));
 
 %CLOSE!! file
 fclose(fileID); 
 
 
+%SAVE fully processed combined tables with exclusions excluded (incl for communities/consortia)
+CategoryList = {NotAutoExtractedTabs_SheetList{3:end}}; %get list of categories except communities/consortia
+LetterPrefix = {'a','b','c','d','e'};
+for i = 1:numel(FinalOpTabByCateg)
+    writetable(FinalOpTabByCateg{i},strcat('SF6',LetterPrefix{i},'_',CategoryList{i},'_FinalProcessedExtractedData.xlsx'))
+end
+
+%SAVE processed community/consortia table
+CommConsortia_ProcessedTab = AutoExtractedTabs_FullTab{end};
+CommConsortia_ProcessedTab_Final = CommConsortia_ProcessedTab(~contains(CommConsortia_ProcessedTab.FileName,Exclusions_CombinedTab.FileName),:);
+writetable(CommConsortia_ProcessedTab_Final,strcat('SF6f_CommunityConsortia_FinalProcessedExtractedData.xlsx'))
+
+%SAVE unique countries and languages
+UnlistedCtry = GetUnlistedCtryLang('Countries',FinalOpTabByCateg{3}); UnlistedLang = GetUnlistedCtryLang('Languages',FinalOpTabByCateg{3});
+u_CtryTab = table(sort(unique(UnlistedCtry))); u_CtryTab.Properties.VariableNames = {'UniqueCountry'};
+u_LangTab = table(sort(unique(UnlistedLang))); u_LangTab.Properties.VariableNames = {'UniqueLanguage'};
+writetable(u_CtryTab,'SF7a_UniqueCountries_Temp.xlsx'); writetable(u_LangTab,'SF7b_UniqueLanguages_Temp.xlsx'); 
 
 
 %------------------------------------------------------------------------------------------------------------------------------------
@@ -182,8 +225,47 @@ function [FullTab] = CombineTabs(IpDir,SheetName,ColsToRead)
 end
 
 %-------------------------------------------------------------------------------------------------
-function [] = CheckNums_ObsExpt_vs_ExtractedStudies()
+%This function takes in the combined automatically extracted table (AutoTab) and the combined manually extracted tab (ManualTab) for a category
+% across all extractions (prehoc and posthoc) as well as the combined table with the list of papers that need to be excluded due to re-typing
+% and identification of duplicate entries (ToExcludeTab), and returns:
+% 1) a table with all extracted data combined and with exclusions from ToExcludeTab as well as entries where an automatically extracted 
+%    study needed manual review/extraction accounted for (OpTab); and
+% 2) The total number of items that needed manual review (after accounting for exclusions).
+function [OpTab,NumManualReview] = GetFinalProcessedTab_ManualDupesAndExclusionsRemoved(AutoTab,ManualTab,ToExcludeTab)
 
+    %remove studies to exclude from automatically extracted and manually extracted tab
+    AutoTab_RemExclusions = AutoTab(~contains(AutoTab.FileName,ToExcludeTab.FileName),:); 
+    ManualTab_RemExclusions = ManualTab(~contains(ManualTab.FileName,ToExcludeTab.FileName),:); 
+
+    %remove entries from auto tab that have been reviewed/extracted manually 
+    IntersectManualAndAuto = intersect(AutoTab.FileName,ManualTab.FileName); %file names that are in automatic and manual tabs
+    AutoTab_RemManualDupes = AutoTab_RemExclusions(~contains(AutoTab_RemExclusions.FileName,IntersectManualAndAuto),:); %remove
+
+    OpTab = [AutoTab_RemManualDupes; ManualTab_RemExclusions]; %concatenate for output
+    NumManualReview = height(ManualTab_RemExclusions); %get number of manually reviewed studies for teh category after removing exclusions (based
+    %on retyping and id-ing dupes per the 'Papers_To_Exclude' sheet)
 end
 
+
+%-------------------------------------------------------------------------------------------------
+%This function takes the country/language processed tab (or any tab, really, but that is the intention) (IpTab), reads in a specified column (ColName),
+% and unlists the entries. That is, if the data is: [{United States; China}, {UK; Finland}, {United States}, ...], the output would be [{United States},
+% {Chins}, {UK}, {Finland}, {United States}, ....]. The assumptions, based on how the country/lang table is organised, is that the separator within 
+% a given entry is ';'.
+function [UnlistedVec] = GetUnlistedCtryLang(ColName,IpTab)
+
+    ReqCol = IpTab.(ColName); %Get the column
+    for i = 1:numel(ReqCol) %split entry at ';' and put the split and trimmed entry from each table cell as its own cell array
+        NewCtryLangCell{i} = strtrim(strsplit(ReqCol{i},';'));
+    end
+    
+    %Unlist the whole cell array by plopping each individual item as its own element in a cell array
+    Ctr = 0;
+    for i = 1:numel(NewCtryLangCell)
+        for j = 1:numel(NewCtryLangCell{i})
+            Ctr = Ctr + 1;
+            UnlistedVec{Ctr,1} = NewCtryLangCell{i}{j};
+        end
+    end
+end
 
