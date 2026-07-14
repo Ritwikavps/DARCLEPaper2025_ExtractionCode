@@ -1,7 +1,8 @@
 clear; clc
 
-%Ritwika VPS
-%This script performs more checks on (atuomatically and manually, as necessary) extracted + reviewed files.
+%Ritwika VPS, May 2026
+%This script plots Fig1 in the main text amd generates summary tables (total numbers by year and by type) + a .txt file that writes some more summary 
+% info to file.
 
 BasePath = '~/Desktop/GoogleDriveFiles/research/DARCLEPaper2025/DARCLEPaper2025_ExtractionCode/Data_PostAutoAndManualExtraction_2026_04/';
 MetadataPath = strcat(BasePath,'MetadataFiles/'); %path to metadata files
@@ -112,13 +113,6 @@ annotation(figure1,'textbox',[0.206619180494746 0.247882440192693 0.125496031746
     'String',{'LENA released','(2009)'},'LineWidth',0.25,'HorizontalAlignment','center','FontSize',24,'BackgroundColor',[1 1 1]);
 annotation(figure1,'textbox',[0.375302817715557 0.32615131680411 0.137731481481481 0.083128078817734],'VerticalAlignment','middle',...
     'String',{'DARCLE formed','(2014)'},'LineWidth',0.25,'HorizontalAlignment','center','FontSize',24,'BackgroundColor',[1 1 1]);
-
-
-
-%% Plotting: By type totals
-figure2 = figure('Color',[1 1 1]);
-barh(flip(u_LFonlyType_org),flip(NumOfType),'FaceColor',[0 0 0])
-set('FontSize',24,'XGrid','on','XLimitMethod','tight','YGrid','on','YLimitMethod','tight','YMinorGrid','on'); % Set the remaining axes properties
 
 
 
