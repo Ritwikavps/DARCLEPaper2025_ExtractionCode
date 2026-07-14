@@ -4,9 +4,9 @@ clear; clc
 %This script plots Fig1 in the main text amd generates summary tables (total numbers by year and by type) + a .txt file that writes some more summary 
 % info to file.
 
-BasePath = '~/Desktop/GoogleDriveFiles/research/DARCLEPaper2025/DARCLEPaper2025_ExtractionCode/Data_PostAutoAndManualExtraction_2026_04/';
-MetadataPath = strcat(BasePath,'MetadataFiles/'); %path to metadata files
-ProcessedDataPath = strcat(BasePath,'ProcessedFiles/'); %path to processed data files (to save summary numbers etc)
+BasePath = '~/Desktop/GoogleDriveFiles/research/DARCLEPaper2025/DARCLEPaper2025_ExtractionCode/Data/';
+MetadataPath = strcat(BasePath,'A0_MetadataFiles/'); %path to metadata files
+OpPath = strcat(BasePath,'A3_AnalysisOutputFiles/'); %path to write processed data files (to save summary numbers etc)
 
 %read in table with full extraction details: pre and posthoc extraction tables combined + all duplicates removed, all retyping done, all non-LF and 
 % non-English studies id'd.
@@ -117,10 +117,10 @@ annotation(figure1,'textbox',[0.375302817715557 0.32615131680411 0.1377314814814
 
 
 %% Write to output files:
-cd(ProcessedDataPath) 
+cd(OpPath) 
 
 %Write summary numbers to text file
-fileID = fopen('SF4a_ExtractionSummaryNumbers.txt', 'a');  %open file
+fileID = fopen('SF4a_ExtractionSummaryNumbers.txt', 'w');  %open file
 
 %Write to file
 fprintf(fileID,'Total number of studies included: %i \n',height(LFAndEngOnlyCombinedTab)); %total number of included studies

@@ -4,220 +4,186 @@ clear; clc
 % This script performs more checks on (atuomatically and manually, as necessary) extracted + reviewed files, gets summary numbers for countries 
 % and languages, and writes associated outputs to file as appropriate.
 
-%reading in extraction sheets and getting obs/expyt only + combining
-PreHoc = readtable('DARCLE_extraction_2.16.26.xlsx','Sheet','Corrected_ReTyped_PostManualExt');
-PostHoc = readtable('Post-hoc Paper Extractions_3.23.26.xlsx','Sheet','Corrected_ReTyped_PostManualExt');
-PreHoc_ObsExp = PreHoc(contains(PreHoc.Type,{'Observational','Experimental'},'IgnoreCase',true),:);
-PostHoc_ObsExp = PostHoc(contains(PostHoc.Type,{'Observational','Experimental'},'IgnoreCase',true),:);
-ExtracSheet_ObsExp_Combined = [PreHoc_ObsExp; PostHoc_ObsExp];
+%Paths
+BasePath = '~/Desktop/GoogleDriveFiles/research/DARCLEPaper2025/DARCLEPaper2025_ExtractionCode/Data/';
+MetadataPath = strcat(BasePath,'A0_MetadataFiles/'); %path to metadata files
+ExtractedFilesPath = strcat(BasePath,'A2_DataForAnalysis_PostAutoAndManualExtraction_2026_04/'); %path to extracted files
+OpPath = strcat(BasePath,'A3_AnalysisOutputFiles/'); %path to write processed data files (to save summary numbers etc)
 
-%Reading manually extracted sheet: list of papers manually extracted + list
-%of papers to be excluded
-NotExtractedPapersList = dir('ListOfNotExtractedPapers_ExceptCommsAndConsortia*'); %there should be three
-PapersToExclude_Full = readtable(NotExtractedPapersList(1).name,'Sheet','Papers_to_Exclude');
-PapersToExclude_Full.PaperTitle_NoToC_Updated = []; %This column is empty in 1??
-ManualExtracFull = readtable(NotExtractedPapersList(1).name,'Sheet','Main_Generated');
-for i = 2:numel(NotExtractedPapersList)
-    if ~isempty(readtable(NotExtractedPapersList(i).name)) %the third one is empty cuz it's posthoc round 2
-        tempExcTab = readtable(NotExtractedPapersList(i).name,'Sheet','Papers_to_Exclude');
-        tempExcTab.PaperTitle_NoToC_Updated = [];
-        PapersToExclude_Full = [PapersToExclude_Full; tempExcTab];
-        ManualExtracFull = [ManualExtracFull; readtable(NotExtractedPapersList(i).name,'Sheet','Main_Generated')];
+%read in table with full extraction metadata: pre and posthoc extraction tables combined + all duplicates removed, all retyping done, all non-LF and 
+% non-English studies id'd.
+DataTab = readtable(strcat(MetadataPath,'SF3_DARCLE_ExtractionList_Unified.xlsx')); 
+DataTab_ObsExpOnly = DataTab(contains(DataTab.Type,{'Observational','Experimental'},'IgnoreCase',true),:);  %Only obs and experimental
+
+%% 1. Get extracted data 
+cd(ExtractedFilesPath)
+
+%---1a. Data from manually extracted sheets-----------------
+% First we get the list of manually extracted tables (dir()). Then, the second posthoc table is excluded because there was no manual extraction
+% associated with teh second posthoc round. The sheets in these tables correspond to an extraction category (e.g., recording device, software, etc.),
+% lists of papers that were not automatically extracted for *all* categories except community/consortia (see extraction code for details), and
+% lists of papers that were tagged to be excluded from extraction because they were identified as duplicates or not experimental/obs, etc during
+% manual review. For the prehoc and first posthoc tables, each sheet is read in for the required subset of columns and combined into a single table.
+NotAutoExtractedPapers_Dir = dir('ListOfNotExtractedPapers_ExceptCommsAndConsortia*'); %Reading manually extracted sheet: there should be three.
+%CHECK!
+if numel(NotAutoExtractedPapers_Dir) ~= 3
+    error('There should be 3 sheets of not extracted papers (1 pre-hoc and 2 post-hoc)')
+end
+
+%Remove table from posthoc round2,'ListOfNotExtractedPapers_ExceptCommsAndConsortia_PosthocRd2.xlsx' (empty table). 
+NotAutoExtractedPapers_Dir = NotAutoExtractedPapers_Dir(~contains({NotAutoExtractedPapers_Dir.name}, ...
+                                                                   'ListOfNotExtractedPapers_ExceptCommsAndConsortia_PosthocRd2.xlsx'));
+%Get sheets for excel files for manual review/extraction corresponding to prehoc and first round of posthoc extraction.
+NotAutoExtractedTabs_SheetList = {'Papers_to_Exclude','Main_Generated','RecDevice','Software','CountriesAndLangs','ManualAnnot','Topics'}; %names of sheets
+%For each sheet, get the list of cols to read in (to pass into the user-defined fn below)
+NotAutoExtractedTabs_SheetsColsToRead = {{'PaperTitle_ToC','PaperTitle_NoToC','FileName'}, %Papers_to_Exclude
+                                          {'PaperTitle_ToC','PaperTitle_NoToC','FileName'}, %Main_Generated
+                                          {'FileName','LENA','Camera','RecOrMic'}, %RecDevice
+                                          {'FileName','LENA','Praat','OpenSMILE','ALICE','SpeechDetAlg'}, %Software
+                                          {'FileName','CountriesProcessed','LanguagesProcessed'}, %CountriesAndLangs
+                                          {'FileName','ManualAnnot'}, %ManualAnnot
+                                          {'FileName','CDSvsADS','VocMaturity','Multiling',...
+                                                'CommDisorder','SES','SchoolProg','Multimodal','StressAnxEmo','CryNonCry','NICU'}}; %Topics
+%For each item in the sheets list, read through the not-auto-extracted tables and combine. So, this would, for eg, read the 'Papers_To_Exclude' sheet from 
+% all tables listing papers that weren't automatically extracted (i.e., the pre-hoc round and the first post-hoc round, cuz the second posthoc extraction
+% had no papers that could not be automatically extracted), and combine those sheets (for only the specified columns) into a single table. And that table
+% is then stored in a cell array.
+for i = 1:numel(NotAutoExtractedTabs_SheetList)
+    NotAutoExtractedTabs_FullTab{i} = CombineTabs(NotAutoExtractedPapers_Dir,NotAutoExtractedTabs_SheetList{i},NotAutoExtractedTabs_SheetsColsToRead{i});
+end
+
+%Rename the countries and languages table (so we can merge with the automatically extracted table)
+if isequal(sort(NotAutoExtractedTabs_FullTab{5}.Properties.VariableNames), ...
+        sort({'FileName','CountriesProcessed','LanguagesProcessed'})) %check that we have the correct table
+    NotAutoExtractedTabs_FullTab{5}.Properties.VariableNames = {'FileName','Countries','Languages'};
+else
+    error('Attempting to rename the wrong table')
+end
+
+%---1b. Data from automatically extracted sheets-----------------
+% Get the categories (each category is its own set of extracted sheets for each round (pre- and two post-hocs) of extraction) that were extracted. These
+% strings will be used to dir() automatically extracted spreadsheets for that category and combine spreadsheets at the category level into a single table.
+AutoExtractedPapers_Categories = {'RecDevice_ExtractedSents*','Software_ExtractedSents*','CountriesLangsStatesUS_ExtractedSents*',...
+                                  'ManualAnnot_ExtractedSents*','Topics_ExtractedBinary*','CommunityConsortia_ExtractedBinary*'};
+AutoExtractedPapers_ByCategCols = {{'FileName','LENA','Camera','RecOrMic'}, %RecDevice
+                                    {'FileName','LENA','Praat','OpenSMILE','ALICE','SpeechDetAlg'}, %Software
+                                    {'FileName','Countries','Languages'}, %CountriesAndLangs
+                                    {'FileName','ManualAnnot'}, %ManualAnnnot
+                                    {'FileName','CDSvsADS','VocMaturity','Multiling',...
+                                                'CommDisorder','SES','SchoolProg','Multimodal','StressAnxEmo','CryNonCry','NICU'}, %Topics
+                                    {'FileName','DARCLE','ACLEW','Homebank','Talkbank','ALICE','VTC','LangView','MPaL','ManyBabies'}}; %Communities/consortia
+for i = 1:numel(AutoExtractedPapers_Categories)
+    CurrCateg_Dir = dir(AutoExtractedPapers_Categories{i}); %get list of tables
+    %CHECK
+    if numel(CurrCateg_Dir) ~= 3
+        error('There should be 3 spreadsheets (1 pre-hoc and 2 post-hoc)')
+    end
+    AutoExtractedTabs_FullTab{i} = CombineTabs(CurrCateg_Dir,'Sheet1',AutoExtractedPapers_ByCategCols{i});
+end
+
+%---1c. Checks Pt 1 ---
+% Check that the total number of obs + experimental papers (from the final, re-typed, duplicate removed etc combined extraction sheet) matches the 
+% number of papers listed in the automatic extraction table for that category (even if required manual review) + number of papers that could
+% not be manually extracted - minus papers that were tagged as needing to be excluded during manual review/extraction (resulting in the final combined
+% extraction sheet).
+
+%Topics are only extracted automatically, so the number of entries in the combined topics spreadhseet minus the number of papers tagged to be excluded
+% in the combined Papers_To_Exclude sheet from the manual extraction spreadsheets should be equal to the finalied number of observational and expt studies.
+% This is because the final count is determined after id-ing duplicates and re-typed papers, and that info is present in the 'Papers_To_Exclude' combined
+% sheet.
+if (height(AutoExtractedTabs_FullTab{end}) - height(NotAutoExtractedTabs_FullTab{1})) ~= height(DataTab_ObsExpOnly)
+    error('Topics numbers do not match (Checks Pt1')
+end
+
+%All other categories except topics
+ManualInds = 3:7; AutoInds = 1:5; %indices for recdevice, software, countries and langs, manual annotations, and topics
+for i = 1:numel(AutoInds)  %check for each category
+    if ((height(AutoExtractedTabs_FullTab{AutoInds(i)}) + height(NotAutoExtractedTabs_FullTab{2}) - height(NotAutoExtractedTabs_FullTab{1})) ...
+            ~= height(DataTab_ObsExpOnly))
+        i
+        error(['Final number of obs + expt papers not equal to number of automatically extracted (with or without needing further review) paper' ...
+            '+ number of papers that could not be automatically extracted at all - number of papers that are excluded papers due to dupes and/or re-typing'])
+        %NotAutoExtractedTabs_FullTab{2} is the list of papers that could not be automatically extracted at all
+        %NotAutoExtractedTabs_FullTab{1} is the list of papers that are flagged for exclusion due to dupes id-d and/or re-typing.
     end
 end
 
-%file names to exclude from the full list of papers to exclude
-FnamesToExclude = PapersToExclude_Full.FileName;
 
-%Automatically extrcted countries and languages
-CountryLangExtractedList = dir('CountriesLangsStatesUS_ExtractedSents*');
-CountryLangAutoFull = readtable(CountryLangExtractedList(1).name);
-CountryLangAutoFull.StatesUS_sents = [];
-for i = 2:numel(CountryLangExtractedList)
-    TempTab = readtable(CountryLangExtractedList(i).name);
-    TempTab.StatesUS_sents = [];
-    CountryLangAutoFull = [CountryLangAutoFull; TempTab];
-end
+%---1d. Checks Pt 2 (more fine-grained checks) ---
+% For each category (except topics, because topics are entirely extracted automatically), check that the final number of expt + obs papers is
+% equal to the number of automatically extracted papers + number of manually extracted/reviewed studies - number of studies tagged for
+% exclusion - number of studies in manually extracted/reviewed studies that replaces the corresponding automatically extracted entry (due to being
+% manually reviewed and therefore, being present in the category-level manual review/extraction).
+% Aside from studies that could not be automatically extracted at all, for some categories, some studies required manual review/extraction, even if
+% they were present in the automatic extraction sheet. For these studies, the manual review/extraction entry is intended to replace the automatic 
+% extraction one if it exists.
 
-%checks that numbers match
-height(ExtracSheet_ObsExp_Combined)
-height(CountryLangAutoFull) + height(ManualExtracFull) - height(PapersToExclude_Full)
 
-%manually extracted countries and langs
-CountryLangManualFull = readtable(NotExtractedPapersList(1).name,'Sheet','CountriesAndLangs');
-CountryLangManualFull.Notes = [];
-for i = 2:numel(NotExtractedPapersList)
-    if ~isempty(readtable(NotExtractedPapersList(i).name)) %the third one is empty cuz it's posthoc round 2
-        tempExcTab = readtable(NotExtractedPapersList(i).name,'Sheet','CountriesAndLangs');
-        tempExcTab.Notes = [];
-        CountryLangManualFull = [CountryLangManualFull; tempExcTab];
-    end
-end
 
-%auto and manual extracted countries and langs after excluding papers that need exclusion
-CountryLangAutoFull_w_ReqFilesExcluded = CountryLangAutoFull(~contains(CountryLangAutoFull.FileName,FnamesToExclude),:);
-CountryLangManualFull_w_ReqFilesExcluded = CountryLangManualFull(~contains(CountryLangManualFull.FileName,FnamesToExclude),:);
-
-%Remove file names in manual from auto (some papers were manually
-%re-evaluated)
-RepeatFnamesInManual = intersect(CountryLangAutoFull_w_ReqFilesExcluded.FileName,CountryLangManualFull_w_ReqFilesExcluded.FileName);
-CountryLangAutoFull_w_ReqFilesExcluded_ManualDupesRemoved =...
-        CountryLangAutoFull_w_ReqFilesExcluded(~contains(CountryLangAutoFull_w_ReqFilesExcluded.FileName,RepeatFnamesInManual),:);
-
-%number check
-height(CountryLangAutoFull_w_ReqFilesExcluded_ManualDupesRemoved) + height(CountryLangManualFull_w_ReqFilesExcluded)
-
-%put together tables
-CountryLangFinalAuto_SubTab = CountryLangAutoFull_w_ReqFilesExcluded_ManualDupesRemoved(:,{'FileName','Countries','Languages'});
-CountryLangFinalManual_SubTab = CountryLangManualFull_w_ReqFilesExcluded(:,{'FileName','CountriesProcessed','LanguagesProcessed'});
-CountryLangFinalManual_SubTab.Properties.VariableNames = {'FileName','Countries','Languages'};
-CountryLang_PostProcessFull = [CountryLangFinalAuto_SubTab; CountryLangFinalManual_SubTab];
-
-UnlistedCtry = GetUnlistedCtryLang('Countries',CountryLang_PostProcessFull);
-UnlistedLang = GetUnlistedCtryLang('Languages',CountryLang_PostProcessFull);
-
-%unique(UnlistedLang)
-%unique(UnlistedCtry)
-
-%countries presumed
-CountryLang_PostProcessFull(contains(CountryLang_PostProcessFull.Countries,'presume','IgnoreCase',true),:);
-%presumed united states
-CountryLang_PostProcessFull(contains(CountryLang_PostProcessFull.Countries,'presumed united','IgnoreCase',true),:);
-%languages presumed
-CountryLang_PostProcessFull(contains(CountryLang_PostProcessFull.Languages,'presume','IgnoreCase',true),:);
-%English presumed
-CountryLang_PostProcessFull(contains(CountryLang_PostProcessFull.Languages,'presumed english','IgnoreCase',true),:);
-%countries AND languages presumed
-CountryLang_PostProcessFull(contains(CountryLang_PostProcessFull.Languages,'presume','IgnoreCase',true)...
-& contains(CountryLang_PostProcessFull.Countries,'presume','IgnoreCase',true),:);
-%presumed languages when study is US (presumed or otherwise)
-CountryLang_PostProcessFull(contains(CountryLang_PostProcessFull.Languages,'presume','IgnoreCase',true)...
-& contains(CountryLang_PostProcessFull.Countries,'United States','IgnoreCase',true),:);
-%unspecified langs
-CountryLang_PostProcessFull(contains(CountryLang_PostProcessFull.Languages,'unspecified','IgnoreCase',true),:);
-
-%% LENA
-
-%recdevice_auto
-RecDevList = dir('RecDevice_ExtractedSents*');
-RecDevAutoFull = readtable(RecDevList(1).name);
-RecDevAutoFull = RecDevAutoFull(:,{'FileName','LENA','Camera','RecOrMic'});
-for i = 2:numel(RecDevList)
-    TempTab = readtable(RecDevList(i).name);
-    TempTab = TempTab(:,{'FileName','LENA','Camera','RecOrMic'});
-    %TempTab.StatesUS_sents = [];
-    RecDevAutoFull = [RecDevAutoFull; TempTab];
-end
-
-%recdevice manual
-RecDevManualFull = readtable(NotExtractedPapersList(1).name,'Sheet','RecDevice');
-RecDevManualFull = RecDevManualFull(:,{'FileName','LENA','Camera','RecOrMic'});
-for i = 2:numel(NotExtractedPapersList)
-    if ~isempty(readtable(NotExtractedPapersList(i).name)) %the third one is empty cuz it's posthoc round 2
-        tempExcTab = readtable(NotExtractedPapersList(i).name,'Sheet','RecDevice');
-        tempExcTab = tempExcTab(:,{'FileName','LENA','Camera','RecOrMic'});
-        RecDevManualFull = [RecDevManualFull; tempExcTab];
-    end
-end
-
-%auto and manual extractedrecdev after excluding papers that need exclusion
-RecDevAutoFull_w_ReqFilesExcluded = RecDevAutoFull(~contains(RecDevAutoFull.FileName,FnamesToExclude),:);
-RecDevManualFull_w_ReqFilesExcluded = RecDevManualFull(~contains(RecDevManualFull.FileName,FnamesToExclude),:);
-
-%Remove file names in manual from auto (some papers were manually
-%re-evaluated)
-RepeatFnamesInManual_RecDev = intersect(RecDevAutoFull_w_ReqFilesExcluded.FileName,RecDevManualFull_w_ReqFilesExcluded.FileName);
-RecDevAutoFull_w_ReqFilesExcluded_ManualDupesRemoved =...
-        RecDevAutoFull_w_ReqFilesExcluded(~contains(RecDevAutoFull_w_ReqFilesExcluded.FileName,RepeatFnamesInManual_RecDev),:);
-
-%number check
-TotObsExpt_RecDev = height(RecDevAutoFull_w_ReqFilesExcluded_ManualDupesRemoved) + height(RecDevManualFull_w_ReqFilesExcluded)
-
-%put together tables
-RecDev_PostProcessFull = [RecDevAutoFull_w_ReqFilesExcluded_ManualDupesRemoved; RecDevManualFull_w_ReqFilesExcluded];
-%Note: Oller has methods in supp, and Galindo uses existing repo so the rec
-%device could not be inferred
-
-LENA_Rec_yes = height(RecDev_PostProcessFull.LENA(contains(RecDev_PostProcessFull.LENA,'yes','IgnoreCase',true),:))
-LENA_Rec_no = height(RecDev_PostProcessFull.LENA(contains(RecDev_PostProcessFull.LENA,'no','IgnoreCase',true),:)) 
+%SAVE fully processed combined tables with exclusions excluded (incl for
+%topics)
 
 
 
 
-%software auto
-SoftwareList = dir('Software_ExtractedSents*');
-SoftwareAutoFull = readtable(SoftwareList(1).name);
-SoftwareAutoFull = SoftwareAutoFull(:,{'FileName','LENA','Praat','OpenSMILE','ALICE','SpeechDetAlg'});
-for i = 2:numel(SoftwareList)
-    TempTab = readtable(SoftwareList(i).name);
-    TempTab = TempTab(:,{'FileName','LENA','Praat','OpenSMILE','ALICE','SpeechDetAlg'});
-    %TempTab.StatesUS_sents = [];
-    SoftwareAutoFull = [SoftwareAutoFull; TempTab];
-end
 
-%software manual
-SoftwareManualFull = readtable(NotExtractedPapersList(1).name,'Sheet','Software');
-SoftwareManualFull = SoftwareManualFull(:,{'FileName','LENA','Praat','OpenSMILE','ALICE','SpeechDetAlg'});
-for i = 2:numel(NotExtractedPapersList)
-    if ~isempty(readtable(NotExtractedPapersList(i).name)) %the third one is empty cuz it's posthoc round 2
-        tempExcTab = readtable(NotExtractedPapersList(i).name,'Sheet','Software');
-        tempExcTab = tempExcTab(:,{'FileName','LENA','Praat','OpenSMILE','ALICE','SpeechDetAlg'});
-        SoftwareManualFull = [SoftwareManualFull; tempExcTab];
-    end
-end
+%% Write outputs to file
+cd(OpPath) 
 
-%auto and manual extractedSoftware after excluding papers that need exclusion
-SoftwareAutoFull_w_ReqFilesExcluded = SoftwareAutoFull(~contains(SoftwareAutoFull.FileName,FnamesToExclude),:);
-SoftwareManualFull_w_ReqFilesExcluded = SoftwareManualFull(~contains(SoftwareManualFull.FileName,FnamesToExclude),:);
+%Write summary numbers to text file
+fileID = fopen('S5_SummaryNumbersFromExtractedData.txt', 'w');  %open file
 
-%Remove file names in manual from auto (some papers were manually
-%re-evaluated)
-RepeatFnamesInManual_Software = intersect(SoftwareAutoFull_w_ReqFilesExcluded.FileName,SoftwareManualFull_w_ReqFilesExcluded.FileName);
-SoftwareAutoFull_w_ReqFilesExcluded_ManualDupesRemoved =...
-        SoftwareAutoFull_w_ReqFilesExcluded(~contains(SoftwareAutoFull_w_ReqFilesExcluded.FileName,RepeatFnamesInManual_Software),:);
-
-%number check
-TotObsExpt_Software = height(SoftwareAutoFull_w_ReqFilesExcluded_ManualDupesRemoved) + height(SoftwareManualFull_w_ReqFilesExcluded)
-
-%put together tables
-Software_PostProcessFull = [SoftwareAutoFull_w_ReqFilesExcluded_ManualDupesRemoved; SoftwareManualFull_w_ReqFilesExcluded];
-%Note: Oller has methods in supp so software could not be inferred
-
-LENA_Software_yes = height(Software_PostProcessFull.LENA(contains(Software_PostProcessFull.LENA,'yes','IgnoreCase',true),:))
-LENA_Software_no = height(Software_PostProcessFull.LENA(contains(Software_PostProcessFull.LENA,'no','IgnoreCase',true),:))
+%Write to file:
+%total number of included studies (after accounting for exclusions)
+fprintf(fileID,'Total number of studies included (after accounting for exclusions; see next line): %i \n',height(DataTab_ObsExpOnly)); 
+%Total number of studies excluded during/after manual extraction and review due to re-typing and id-ing dupes (including id-ing dupes through custom code).
+fprintf(fileID,['The total number of studies excluded during/after the manual extraction and review stage' ... 
+    'due to identifying dupes (including id-ing dupes through custom code) + study type ' ...
+    'being changed after review (re-typing) is: %i \n'],height(NotAutoExtractedTabs_FullTab{1})); 
+fprintf(fileID,['Topics were automatically extracted from ALL pdfs initially tagged as experimental or observational. ' ...
+    'Accounting for exculded studies (see prev. line), number of studies topics were extracted from: %i \n'], ...
+    height(AutoExtractedTabs_FullTab{end}) - height(NotAutoExtractedTabs_FullTab{1})); %Number of studies topics were extracted from (accounting for exclusions)
 
 
-LENA_Rec_SubTab = RecDev_PostProcessFull(:,{'FileName','LENA'});
-LENA_Rec_SubTab = renamevars(LENA_Rec_SubTab,'LENA','LENA_Rec');
-LENA_Software_SubTab = Software_PostProcessFull(:,{'FileName','LENA'});
-LENA_Software_SubTab = renamevars(LENA_Software_SubTab,'LENA','LENA_Software');
-LENA_RecSoftware_Combined = join(LENA_Software_SubTab,LENA_Rec_SubTab);
-LENA_AsRecOrSoftware_SubTab = LENA_RecSoftware_Combined(contains(LENA_RecSoftware_Combined.LENA_Software,'yes','IgnoreCase',true) | ...
-                                contains(LENA_RecSoftware_Combined.LENA_Rec,'yes','IgnoreCase',true),:);
-LENA_AsRecAndSoftware_SubTab = LENA_RecSoftware_Combined(contains(LENA_RecSoftware_Combined.LENA_Software,'yes','IgnoreCase',true) & ...
-                                contains(LENA_RecSoftware_Combined.LENA_Rec,'yes','IgnoreCase',true),:);
-Num_LENA_RecORSoftware = height(LENA_AsRecOrSoftware_SubTab)
-Num_LENA_RecANDSoftware = height(LENA_AsRecAndSoftware_SubTab)
+%CLOSE!! file
+fclose(fileID); 
 
 
-%----
-function [UnlistedVec] = GetUnlistedCtryLang(ColName,IpTab)
 
-    ReqCol = IpTab.(ColName);
-    for i = 1:numel(ReqCol)
-        NewCtryLangCell{i} = strtrim(strsplit(ReqCol{i},';'));
-    end
-    
-    Ctr = 0;
-    for i = 1:numel(NewCtryLangCell)
-        for j = 1:numel(NewCtryLangCell{i})
-            Ctr = Ctr + 1;
-            UnlistedVec{Ctr,1} = NewCtryLangCell{i}{j};
+
+%------------------------------------------------------------------------------------------------------------------------------------
+%% FUNCTIONS USED
+%------------------------------------------------------------------------------------------------------------------------------------
+
+%This function takes in a structure outputed from a dir() (IpDir; lists extracted spreadsheets for a given category or from manual extraction), 
+% the sheet within the spreadsheet to extract data from (SheetName), and the column names to be read in (ColsToRead).
+% Outputs a concatenated tab (FullTab) for all tables in IpDir.
+%
+% So, for instance, dir(ListOfNotExtractedPapers_ExceptCommsAndConsortia*) would return an IpDir with the 3 .xlsx files with info for manual extraction.
+% Note that we exclude the excel file corresponding to the second posthoc round for 'ListOfNotExtractedPapers_ExceptCommsAndConsortia'.
+% Now, these excel files have various sheets, which can be accessed using SheetName and the columns to be read in can be specified using ColsToRead.
+% Then, this function will concatenate (vertically) tables corresponding to, say, SheetName = 'Papers_to_Exclude' and ColsToRead for the prehoc
+% and the first posthoc extractions. 
+% 
+% For the automatically extracted tables, there is only one sheet (Sheet1), so the SheetName is fixed. So, say, for IpDir = dir(RecDevice_ExtractedSents*),
+% thsi function will concatenate tables for the automatically extracted recdevice spreadsheets based on ColsToRead.
+function [FullTab] = CombineTabs(IpDir,SheetName,ColsToRead)
+
+    FullTab = readtable(IpDir(1).name,'Sheet',SheetName); %read in first spreadsheet in IpDir based on SheetName
+    FullTab = FullTab(:,ColsToRead); %only keep ColsToRead
+
+    for i = 2:numel(IpDir) %go through the rest of IpDir
+        if ~isempty(readtable(IpDir(i).name)) %check to make sure that table is not empty
+            tempTab = readtable(IpDir(i).name,'Sheet',SheetName); %read in table based on SheetName
+            tempTab = tempTab(:,ColsToRead); %keep ColsToRead
+            FullTab = [FullTab; tempTab]; %Add to output table
         end
     end
 end
 
+%-------------------------------------------------------------------------------------------------
+function [] = CheckNums_ObsExpt_vs_ExtractedStudies()
 
-
+end
 
 
